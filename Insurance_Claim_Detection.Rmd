@@ -1,0 +1,644 @@
+---
+title: "PHD Model Building File"
+author: "Nimesh Katoriwala"
+date: "February 4, 2018"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+# Insurance Data Model Building 
+## PHD TASK
+
+### Clear the enviornment
+```{r}
+rm(list = ls(all = T))
+```
+
+### Load Important libraries
+```{r}
+library(doParallel)
+library(ROSE)
+library(caret)
+library(ggplot2)
+library(ROCR)
+library(C50)
+```
+
+### Set current working directory
+```{r}
+setwd("C:\\Users\\NY 5211\\Downloads\\PHD\\Machine Learning\\main_data")
+```
+
+### Read train and test file from the directory
+```{r}
+train_data = read.csv("new_train.csv", header = T, stringsAsFactors = T, na.strings = c("???","NA"))
+test_data = read.csv("new_test.csv", header = T, stringsAsFactors = T, na.strings = c("???", "NA"))
+```
+
+### Merge two file by rbind, to overcome the problem of level imbalance
+```{r}
+test_data$ReportedFraud = NA
+
+combined_data = rbind(train_data, test_data)
+```
+
+## Exploratory Data Analysis
+
+### Summary statistics
+```{r}
+summary(combined_data)
+str(combined_data)
+```
+
+### See the first and last records from the data
+```{r}
+head(combined_data)
+tail(combined_data)
+```
+
+## Missing Values Handling
+
+### Remove those columns which contains more than 20% missing values
+```{r}
+colSums(is.na(combined_data)) ### Finding column wise missing values
+combined_data = combined_data[, !(colSums(is.na(combined_data)) == nrow(combined_data) * 0.2)]
+```
+
+## Missing values replacement
+
+## Vehicle make 58 missing values, so we can replace by "None" by increasing the one level
+```{r}
+lvl_vhMake = levels(combined_data$VehicleMake)
+lvl_vhMake[length(lvl_vhMake) + 1] = "None"
+
+combined_data$VehicleMake = factor(combined_data$VehicleMake, levels = lvl_vhMake)
+combined_data$VehicleMake[is.na(combined_data$VehicleMake)] = "None"
+
+sum(is.na(combined_data$VehicleMake)) ## Verify missing values
+```
+
+## TypeOfCollission contains 6959 missing values. To replace missing values by "Other" by increasing the one level
+```{r}
+#colSums(is.na(combined_data))
+
+lvl_tyCollission = levels(combined_data$TypeOfCollission)
+lvl_tyCollission[length(lvl_tyCollission) + 1] = "Other"
+
+combined_data$TypeOfCollission = factor(combined_data$TypeOfCollission, levels = lvl_tyCollission)
+combined_data$TypeOfCollission[is.na(combined_data$TypeOfCollission)] = "Other"
+
+sum(is.na(combined_data$TypeOfCollission)) ## Verify missing values
+```
+
+## IncidentTime column having 38 missing values. Datatype of this column is integer, so first we need to convert into factors so we can add another level into this column
+```{r}
+#colSums(is.na(combined_data))
+combined_data$IncidentTime = as.factor(as.integer(combined_data$IncidentTime))
+
+lvl_incTime = levels(combined_data$IncidentTime)
+lvl_incTime[length(lvl_incTime) + 1] = "Not known"
+
+combined_data$IncidentTime = factor(combined_data$IncidentTime, levels = lvl_incTime)
+combined_data$IncidentTime[is.na(combined_data$IncidentTime)] = "Not known"
+
+sum(is.na(combined_data$IncidentTime)) ## Verify missing values
+```
+
+## Witness contains 58 missing values, and witness having a integer type so we need to convert it into factor so we can easily impute the missing values....
+```{r}
+#colSums(is.na(combined_data))
+combined_data$Witnesses = as.factor(as.integer(combined_data$Witnesses))
+
+lvl_witness = levels(combined_data$Witnesses)
+lvl_witness[length(lvl_witness) + 1] = "Not mention"
+
+combined_data$Witnesses = factor(combined_data$Witnesses, levels = lvl_witness)
+combined_data$Witnesses[is.na(combined_data$Witnesses)] = "Not mention"
+
+sum(is.na(combined_data$Witnesses)) ## Verify missing values
+```
+
+
+## Property damage contains 13970 missing values, and it is a categorical variable so we need to create one level as a replacement of missing values
+```{r}
+#colSums(is.na(combined_data))
+
+lvl_prDamage = levels(combined_data$PropertyDamage)
+lvl_prDamage[length(lvl_prDamage) + 1] = "Not aware"
+
+combined_data$PropertyDamage = factor(combined_data$PropertyDamage, levels = lvl_prDamage)
+combined_data$PropertyDamage[is.na(combined_data$PropertyDamage)] = "Not aware"
+
+sum(is.na(combined_data$Witnesses)) ## Verify missing values
+
+```
+
+## PoliceReport contains 13607 missing values, so we need to replace by another level.
+```{r}
+#colSums(is.na(combined_data))
+
+lvl_pReport = levels(combined_data$PoliceReport)
+lvl_pReport[length(lvl_pReport) + 1] = "Not registered"
+
+combined_data$PoliceReport = factor(combined_data$PoliceReport, levels = lvl_pReport)
+combined_data$PoliceReport[is.na(combined_data$PoliceReport)] = "Not registered"
+
+sum(is.na(combined_data$PoliceReport)) ## Verify missing values
+```
+
+## AmountOfTotalClaim contains 58 missing values so we replace by 0 because it is an numeric data
+```{r}
+#colSums(is.na(combined_data))
+
+combined_data$AmountOfTotalClaim[is.na(combined_data$AmountOfTotalClaim)] = 0
+sum(is.na(combined_data$AmountOfTotalClaim))
+```
+
+## PolicyAnnualPremium contains 192 missing values and it is a integer type column so we can replace by 0
+```{r}
+#colSums(is.na(combined_data))
+
+combined_data$PolicyAnnualPremium[is.na(combined_data$PolicyAnnualPremium)] = 0
+sum(is.na(combined_data$PolicyAnnualPremium))
+```
+
+## InsureGender contains 38 missing values so we need to replaced by another category.
+```{r}
+#colSums(is.na(combined_data))
+
+lvl_inGender = levels(combined_data$InsuredGender)
+lvl_inGender[length(lvl_inGender) + 1] = "Not mention"
+
+combined_data$InsuredGender = factor(combined_data$InsuredGender, levels = lvl_inGender)
+combined_data$InsuredGender[is.na(combined_data$InsuredGender)] = "Not mention"
+
+sum(is.na(combined_data$InsuredGender)) ## Verify missing values
+
+```
+
+```{r}
+#write.csv(combined_data,"combined_data.csv", row.names = F)
+```
+
+## Feature Engineering
+
+### Remove those column which has no frequency, as well remove those column which are not useful
+```{r}
+combined_data$Country = NULL
+#combined_data$CustomerID = NULL
+combined_data$VehicleID = NULL
+combined_data$AmountOfInjuryClaim = NULL
+combined_data$AmountOfPropertyClaim = NULL
+combined_data$AmountOfVehicleDamage = NULL
+combined_data$IncidentAddress = NULL
+combined_data$InsuredZipCode = NULL
+combined_data$InsurancePolicyNumber = NULL
+
+combined_data$InsuredEducationLevel = NULL
+combined_data$InsuredRelationship = NULL
+combined_data$Policy_SplitLimit = NULL
+combined_data$Policy_CombineSingleLimit = NULL
+```
+
+### Generate a new feature "TotalnoOfDays" from given two dates 
+```{r}
+combined_data$DateOfIncident = as.Date(combined_data$DateOfIncident, format = "%m/%d/%Y")
+combined_data$DateOfPolicyCoverage = as.Date(combined_data$DateOfPolicyCoverage, format = "%m/%d/%Y")
+
+combined_data$TotalNoofDays = as.numeric(combined_data$DateOfIncident - combined_data$DateOfPolicyCoverage)
+
+combined_data$DateOfIncident = NULL
+combined_data$DateOfPolicyCoverage = NULL
+```
+
+### Generate new feature "VehicleAge" from two columns "VehicleYOM" and "DateOfIncident"
+```{r}
+combined_data$VehicleAge = as.factor(as.numeric(2015 - combined_data$VehicleYOM))
+
+combined_data$VehicleYOM = NULL ## Remove Column
+```
+
+### Generate two columns from "Policy_combinesplitlimit" as "Policy_splitlimit", "Policy_combinedlimit"
+```{r}
+limit = as.data.frame(combined_data$Policy_CombinedSingleLimit)
+
+for(i in 1:nrow(limit)){
+  a = unlist(strsplit(as.character(combined_data$Policy_CombinedSingleLimit[i]), "/", fixed = T))
+  combined_data$Policy_SplitLimit[i] = a[1]
+  combined_data$Policy_CombineSingleLimit[i] = a[2]
+}
+
+combined_data$Policy_SplitLimit = as.numeric(as.character(combined_data$Policy_SplitLimit))
+combined_data$Policy_CombineSingleLimit = as.numeric(as.character(combined_data$Policy_CombineSingleLimit))
+
+##write.csv(combined_data,"comb.csv", row.names = F)
+
+combined_data$Policy_CombinedSingleLimit = NULL ## Remove Column
+
+### Convert two new columns into factor because it contains 3 categories levels
+combined_data$Policy_SplitLimit = as.factor(as.numeric(combined_data$Policy_SplitLimit))
+combined_data$Policy_CombineSingleLimit =  as.factor(as.factor(combined_data$Policy_CombineSingleLimit))
+```
+
+### Generate column "Financial_status" from "CapitalGain" and "CapitalLoss"
+```{r}
+combined_data$Financial_Status = combined_data$CapitalGains - combined_data$CapitalLoss
+
+combined_data$CapitalLoss = NULL ## Remove Capital Loss
+combined_data$CapitalGains = NULL ## Remove Capital Gain
+
+##write.csv(combined_data,"comb.csv", row.names = F)
+```
+
+### Split the entire data into original train and test 
+```{r}
+actual_train = combined_data[1:28836,]
+actual_test = combined_data[28837:38498,]
+actual_test$ReportedFraud = NULL ## Remove Dependent variable from the actual test data
+```
+
+```{r}
+test_cust_id = actual_test$CustomerID
+tID = data.frame(CustomerID = test_cust_id)
+actual_test$CustomerID = NULL ### Remove Column
+actual_train$CustomerID = NULL ### Remove column
+```
+
+### Checking for imbalance data
+```{r}
+table(actual_train$ReportedFraud)
+```
+
+### Convert Target variable in 0 and 1
+```{r}
+
+actual_train$ReportedFraud = ifelse(actual_train$ReportedFraud == "N",0,1)
+actual_train$ReportedFraud = as.factor(actual_train$ReportedFraud)
+```
+
+## Standardization
+```{r}
+
+registerDoParallel(4)
+
+preProc = preProcess(actual_train[, setdiff(names(actual_train),"ReportedFraud")])
+actual_train = predict(preProc, actual_train) 
+actual_test= predict(preProc, actual_test)
+```
+
+*** when we looking the frequency of "N" & "Y" category level in actual train data, is a imbalanced.
+** Logistic Regression needs to support only traditionally supported data, so for making a balance data we need to use "Oversampling"/"Undersampling/SMOTE" technique
+
+```{r}
+set.seed(5211)
+balance_train = ovun.sample(ReportedFraud ~ ., data = actual_train, N = 10000)
+balance_train <- balance_train$data
+
+## Check the frequency of category 
+table(balance_train$ReportedFraud)
+```
+
+
+## SPliting the dataframe
+
+### Spliting the actual traindata into train and validation
+```{r}
+set.seed(5211)
+
+rows = createDataPartition(actual_train$ReportedFraud, p = 0.7, list = F)
+train = actual_train[rows,]
+validation = actual_train[-rows,]
+```
+
+## Model Building
+
+### Logistic Regression
+```{r}
+log_model = glm(balance_train$ReportedFraud~., family = "binomial", data = balance_train)
+summary(log_model)
+```
+
+### Find the ROC and AUC
+
+## Prediction on Train, Validation and actual test data based on Threshold
+
+### Prediciton on train data
+```{r}
+log_train = predict(log_model, newdata = balance_train, type = "response")
+```
+
+### Convert prediction into probablity
+```{r}
+prob = prediction(log_train, balance_train$ReportedFraud)
+```
+
+### Getting True Positive and False positive rate from the probablity
+```{r}
+tprfpr = performance(prob, "tpr","fpr")
+```
+
+### Plot the Graph and get AUC value
+```{r}
+plot(tprfpr, col = rainbow(10), colorize = T, print.cutoffs.at=seq(0,1,0.05))
+```
+
+### Check the value of AUC
+```{r}
+pred_auc = performance(prob, measure = "auc")
+auc = pred_auc@y.values[[1]]
+```
+
+### Threshold value is: 0.8666
+### Predict on train based on threshold
+```{r}
+pred_log_train = ifelse(log_train > 0.8,1,0)
+confusionMatrix(pred_log_train, balance_train$ReportedFraud, positive = "1")
+```
+
+### Predict on Validation data
+```{r}
+pred_valid = predict(log_model, newdata = validation, type = "response")
+pred_log_valid = ifelse(pred_valid > 0.8, 1, 0)
+confusionMatrix(pred_log_valid, validation$ReportedFraud, positive = "1")
+```
+
+### Predict on Actual Test data
+```{r}
+pred_actual_test = predict(log_model, newdata = actual_test, type = "response")
+pred_log_actualTest = ifelse(pred_actual_test > 0.8,1,0)
+pred_log_actualTest = ifelse(pred_log_actualTest == 0,"N","Y")
+
+opt_file = data.frame(CustomerID = tID, ReportedFraud = pred_log_actualTest)
+#write.csv(pred_log_actualTest, "Sample_submission1.csv", row.names = F)
+```
+
+### Create a function because in final submision file and actual test data, order of CUtomer ID order will be different so make it in a same order below code is used:
+```{r}
+
+myFun = function(submission, outputfile,finaloutput){
+  SamplDataSubmission = read.csv(submission, header = T, stringsAsFactors = T)
+  SamplDataSubmission$Seq_No = seq(1, nrow(SamplDataSubmission), 1)
+  FinalResult_DF = merge(x = SamplDataSubmission , y = outputfile , by.x = "CustomerID" , by.y = "CustomerID")
+
+  FinalResult_DF = FinalResult_DF[order(FinalResult_DF$Seq_No),]
+  FinalResult_DF$Seq_No = NULL
+  FinalResult_DF$ReportedFraud.x = NULL
+  FinalResult_DF$ReportedFraud = FinalResult_DF$ReportedFraud.y
+  FinalResult_DF$ReportedFraud.y = NULL
+
+  write.csv(FinalResult_DF,file = finaloutput, row.names = FALSE)
+
+}
+```
+
+### Calling the function for generating final submission
+```{r}
+myFun("SampleSubmission.csv", opt_file, "SampleSubmission.csv")
+```
+
+```{r}
+## Results: Using Logistic Regression Decision Tree
+##Your answer passed the tests! Your score is 56.54%
+#Auxiliary metrics => Precision=76.71994% and Recall=44.76886%
+```
+
+## Decision Tree
+
+### C5.0 decision tree model for classification Tree based model
+```{r}
+c5_model = C5.0(train$ReportedFraud~., data = train)
+#summary(c5_model)
+```
+
+### Use the rules = T argument if you want to extract rules later from the model
+###Rule based model
+```{r}
+c5_rules = C5.0(train$ReportedFraud~., data = train, rules= T)
+#summary(c5_rules)
+```
+
+### Extract important variable from the data
+```{r}
+C5imp(c5_model, metric = "usage")
+```
+
+* From the output of the summary above, you can clearly understand the rules and their associated metrics such as lift and support
+
+- __This is great for explicability and can also be used for understanding interesting relationships in data, even if your final model is not a decision tree__
+
+### Plotting the tree
+```{r}
+#plot(c5_model)
+```
+
+## Prediciton C5.0
+
+### Prediction on Train data
+```{r}
+c5_train = predict(c5_model, train)
+confusionMatrix(c5_train, train$ReportedFraud, positive = "1")
+```
+
+### Prediciton on Validation data
+```{r}
+c5_validation = predict(c5_model, validation)
+confusionMatrix(c5_validation, validation$ReportedFraud, positive = "1")
+```
+
+### Prediciton on Actual Test data
+```{r}
+c5_actualTest = predict(c5_model, actual_test)
+c5_actualTest = ifelse(c5_actualTest == 0, "N","Y")
+
+opt_file = data.frame(CustomerID = tID, ReportedFraud = c5_actualTest)
+```
+
+### Calling the function for generating final submission for C50 Decision tree
+```{r}
+myFun("SampleSubmission.csv", opt_file, "SampleSubmissionC5.csv")
+```
+
+```{r}
+## Results: Using C50 Decision Tree
+##Your answer passed the tests! Your score is 71.86%
+#Auxiliary metrics => Precision=78.90398% and Recall=65.97729%
+```
+
+## Decision Tree CART
+
+### CART: CLassification and Regression tree
+```{r}
+library(rpart)
+
+cart_model = rpart(train$ReportedFraud~., data = train)
+#summary(cart_model)
+```
+
+### Add Cost Complexity Parameter for pruning the decision tree
+```{r}
+printcp(cart_model)
+plotcp(cart_model)
+```
+
+### Choose minnimum value of CP and build a model again 
+```{r}
+cart_cp = rpart(train$ReportedFraud~., train, control = rpart.control(cp = 0.0001), method = "class")
+printcp(cart_cp)
+plotcp(cart_cp)
+```
+
+### Predicition on Train data for CART
+```{r}
+cart_train = predict(cart_cp, train, type = "class")
+confusionMatrix(cart_train, train$ReportedFraud, positive = "1")
+```
+
+### Prediction on validation data for CART
+```{r}
+cart_validation = predict(cart_cp, validation, type = "class")
+confusionMatrix(cart_validation, validation$ReportedFraud, positive = "1")
+
+```
+
+### Prediciton on actual test data
+```{r}
+cart_actualTest = predict(cart_cp, actual_test, type = "class")
+cart_actualTest = ifelse(cart_actualTest == 0, "N","Y")
+opt_file = data.frame(CustomerID = tID, ReportedFraud = cart_actualTest)
+```
+
+### Call the final function for generating final submission file
+```{r}
+myFun("SampleSubmission.csv", opt_file, "SampleSubmissionCart.csv")
+```
+
+
+```{r}
+## Results: Using CART Decision Tree
+##Your answer passed the tests! Your score is 67.86%
+#Auxiliary metrics => Precision=71.90398% and Recall=64.97729%
+```
+
+## RANDOM FOREST
+
+### Building a random forest using H2O
+```{r}
+library(h2o)
+
+#To launch the H2O cluster, write -
+localH2O <- h2o.init(nthreads = -1)
+
+h2o.init()
+```
+
+### Load data to h2o cluster
+```{r}
+
+h.train = as.h2o(train)
+h.validation = as.h2o(validation)
+h.test = as.h2o(actual_test)
+```
+
+### Set dependent and independent variable
+```{r}
+indX = colnames(train)[!(colnames(train) == "ReportedFraud")]
+```
+### Random Forest using H2o
+```{r}
+rf_model = h2o.randomForest(y = "ReportedFraud", x = indX, training_frame = h.train, ntrees = 1000,mtries = 3, max_depth = 30)
+```
+### Check the performance of the model and find out important variable
+```{r}
+h2o.performance(rf_model)
+h2o.varimp(rf_model)
+```
+
+### Predict on Train data
+```{r}
+rf_train = as.data.frame(h2o.predict(rf_model, h.train))
+
+rf_train$predict = ifelse(rf_train$predict == 0,"N","Y")
+```
+
+### Predict on Validation data
+```{r}
+rf_validation = as.data.frame(h2o.predict(rf_model, h.validation))
+rf_validation$predict = ifelse(rf_validation$predict == 0,"N","Y")
+```
+
+### Predict on actual test data
+```{r}
+rf_test = as.data.frame(h2o.predict(rf_model, h.test))
+rf_test$predict = ifelse(rf_test$predict == 0,"N","Y")
+
+rf_test$p0 = NULL
+rf_test$p1 = NULL
+
+opt_file = data.frame(CustomerID = tID, ReportedFraud = rf_test$predict)
+
+```
+
+### Generate the final submission file
+```{r}
+myFun("SampleSubmission.csv", opt_file, "SampleSubmissionRF.csv")
+```
+
+### Final Result of Randome Forest
+```{r}
+#Your answer passed the tests! Your score is 81.08%, 79(1000),
+
+#Auxiliary metrics => Precision=85.72078% and Recall=76.43958%
+
+```
+
+## Gradient Boosting with h2o
+
+### Gradient Bossting
+```{r}
+
+gbm_model = h2o.gbm(y = "ReportedFraud", x = indX, training_frame = h.train, ntrees = 1000, max_depth = 20, learn_rate = 0.01, seed = 5211)
+```
+
+### Making Prediciton on train data
+```{r}
+
+gbm_train = as.data.frame(h2o.predict(gbm_model, h.train))
+
+gbm_train$predict = ifelse(gbm_train$predict == 0,"N","Y")
+```
+
+
+### Predict on Validation data
+```{r}
+gbm_validation = as.data.frame(h2o.predict(gbm_model, h.validation))
+gbm_validation$predict = ifelse(gbm_validation$predict == 0,"N","Y")
+```
+
+### Predict on actual test data
+```{r}
+gbm_test = as.data.frame(h2o.predict(gbm_model, h.test))
+gbm_test$predict = ifelse(gbm_test$predict == 0,"N","Y")
+
+gbm_test$p0 = NULL
+gbm_test$p1 = NULL
+
+opt_file = data.frame(CustomerID = tID, ReportedFraud = gbm_test$predict)
+
+```
+
+### Generate the final submission file
+```{r}
+myFun("SampleSubmission.csv", opt_file, "SampleSubmissionGBM.csv")
+```
+
+### Final Result using GBM
+```{r}
+#Your answer passed the tests! Your score is 75.33% |76.76% |77.71%|
+
+#Auxiliary metrics => Precision=73.49537% and Recall=77.25061%
+ 
+```
+
